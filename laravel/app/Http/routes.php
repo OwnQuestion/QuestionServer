@@ -224,6 +224,17 @@ Route::post('/getComments', 'QuestionController@getComments');
 */
 Route::post('/getTags', 'CommonController@getTags');
 
+/*
+|--------------------------------------------------------------------------
+| 上传文件
+|--------------------------------------------------------------------------
+|
+|@param file           文件
+|@param fileName       文件名
+|
+*/
+Route::post('/uploadFile', 'CommonController@uploadFile');
+
 Route::post('/user', [
     'middleware' => 'auth',
     'uses' => 'Test@test'
