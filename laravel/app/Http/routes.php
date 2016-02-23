@@ -235,6 +235,33 @@ Route::post('/getTags', 'CommonController@getTags');
 */
 Route::post('/uploadFile', 'CommonController@uploadFile');
 
+/*
+|--------------------------------------------------------------------------
+| 问题详情
+|--------------------------------------------------------------------------
+|
+|@param token          身份认证
+|@param questionId     问题id
+|
+*/
+Route::post('/getQuestionDetail', 'QuestionController@getQuestionDetail');
+
+Route::post('/user', [
+    'middleware' => 'auth',
+    'uses' => 'Test@test'
+]);
+
+/*
+|--------------------------------------------------------------------------
+| 回答详情
+|--------------------------------------------------------------------------
+|
+|@param token          身份认证
+|@param answerId     回答id
+|
+*/
+Route::post('/getAnswerDetail', 'QuestionController@getAnswerDetail');
+
 Route::post('/user', [
     'middleware' => 'auth',
     'uses' => 'Test@test'

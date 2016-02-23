@@ -39,6 +39,7 @@ class AuthController extends Controller
 
         if ($user == null)
         {
+
             return Utility::response_format(Utility::RESPONSE_CODE_Error, '', '账号密码错误');
         }
         else
