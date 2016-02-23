@@ -8,6 +8,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Model\Picture;
 use App\Model\Tags;
 use Illuminate\Http\Request;
 use App\Functions\Utility;
@@ -31,6 +32,9 @@ class CommonController extends Controller
         $request = Request::capture();
         $file = $request->file('file');
         $fileName = $request->input('filename');
+        $width = $request->input('width');
+        $height = $request->input('height');
+
 
         if ($file->isValid())
         {
@@ -39,7 +43,8 @@ class CommonController extends Controller
             $extension = $file->getClientOriginalExtension();
             $fileType = $file->getMimeType();
         }
-
+        $picURL = 'urla-------';
+        /*
         $client = S3Client::factory(array(
             'region'      => 'us-west-2',
             'version'     => 'latest',
@@ -49,18 +54,31 @@ class CommonController extends Controller
             ],
         ));
 
+        $s3key = 'tempKey';
         $result = $client->putObject(array(
             'ACL'        => 'public-read',
             'Bucket'     => 'questionbucket',
-            'Key'        => $fileName,
+            'Key'        => $s3key,
             'SourceFile' => $realPath
         ));
 
         $picURL = $result['ObjectURL'];
+        */
+        try {
 
-        if ($picURL != null)
-        {
-            return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $picURL, '上传成功');
+            $picture = Picture::create(['original_pic' => $picURL,
+                'bmiddle_pic' => $picURL,
+                'thumbnail_pic' => $picURL,
+                'pictureName' => $fileName,
+                'width' => $width,
+                'height' => $height]);
+
+            return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $picture->getAttributes(), '上传成功');
+
+        } catch (Exception $e) {
+            return Utility::response_format(Utility::RESPONSE_CODE_DB_ERROR, '', $e->getMessage());
         }
+
+
     }
 }

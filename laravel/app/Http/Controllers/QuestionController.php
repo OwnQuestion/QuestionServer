@@ -11,13 +11,17 @@ namespace App\Http\Controllers;
 use App\Functions\Utility;
 use App\Http\Controllers\Auth\AuthController;
 use App\Model\Answer;
+use App\Model\AnswerPictures;
 use App\Model\AnswerUp;
 use App\Model\Comment;
+use App\Model\Picture;
 use App\Model\Question;
 use App\Model\QuestionPictures;
 use App\Model\QuestionTags;
+use App\Model\Tags;
 use App\Model\UserAccount;
 use App\Model\UserFollows;
+use App\Model\UserInfo;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
@@ -31,6 +35,7 @@ class QuestionController extends Controller
         $token =    $request->input('token');
         $title =    $request->input('title');
         $content =  $request->input('content');
+        $brief = $request->input('brief');
         $pictures = $request->input('picids');
         $tags =     $request->input('tagids');
 
@@ -56,6 +61,7 @@ class QuestionController extends Controller
             $question = Question::create(['title' => $title,
                 'content' => $content,
                 'user_id' => $userId,
+                'brief' => $brief,
                 'publish_time' => time()]);
 
             if ($pictures != null)
@@ -89,6 +95,8 @@ class QuestionController extends Controller
         $token =    $request->input('token');
         $content =    $request->input('content');
         $questionId =  $request->input('questionId');
+        $brief = $request->input('brief');
+        $pictures = $request->input('picids');
 
         if ($content == null)
         {
@@ -101,16 +109,29 @@ class QuestionController extends Controller
             return Utility::response_format(Utility::RESPONSE_CODE_AUTH_ERROR, '', '认证失败');
         }
 
+        DB::beginTransaction();
         try {
 
             $answer = Answer::create(['answer_content' => $content,
-                'question_id' => $questionId,
+                'answer_brief' => $brief,
                 'user_id' => $userId,
+                'question_id' => $questionId,
                 'answer_time' => time()]);
 
+            if ($pictures != null)
+            {
+                $picArray = explode(',', $pictures);
+                foreach ($picArray as $pic)
+                {
+                    AnswerPictures::create(['answer_id' => $answer->id, 'pic_id' => $pic]);
+                }
+            }
+
+            DB::commit();
             return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, '', '发布成功');
 
         } catch (Exception $e) {
+            DB::rollBack();
             return Utility::response_format(Utility::RESPONSE_CODE_DB_ERROR, '', $e->getMessage());
         }
 
@@ -213,7 +234,7 @@ class QuestionController extends Controller
         $request = Request::capture();
         $token = $request->input('token');
         $targetUserId = $request->input('userId'); // 指定某个用户提出的问题 如果为空 显示token用户关注人提出的问题
-//        $page = $request->input('page');
+        $page = $request->input('page');
         $size = $request->input('size');
         $tagId = $request->input('tagId');
 
@@ -229,24 +250,70 @@ class QuestionController extends Controller
         $questions = null;
         if ($targetUserId != null)
         {
-            $questions = Question::where('user_id', $targetUserId);
+            $questions = Question::select('id', 'title', 'brief', 'publish_time', 'user_id')
+                ->where('user_id', $targetUserId)
+                ->orderBy('publish_time', 'desc');
         }
         else
         {
             $followUser = UserFollows::where('user_id', $userId)->lists('follow_user_id')->toArray();
             array_push($followUser, $userId);
-            $questions = Question::whereIn('user_id', $followUser);
+            $questions = Question::select('id', 'title', 'brief', 'publish_time', 'user_id')
+                ->whereIn('user_id', $followUser)
+                ->orderBy('publish_time', 'desc');
         }
 
         if ($tagId != null)
         {
             $questionsTag = QuestionTags::where('tag_id', $tagId)->lists('question_id');
-            $questions = $questions->whereIn('id', $questionsTag);
+            $questions = $questions
+                ->whereIn('id', $questionsTag);
         }
 
-        $result = $questions->paginate($size)->toArray();
+        $questions_query = $questions->paginate($size, '*', 'page', $page)->toArray();
+        $questions_result = $questions_query['data'];
 
-        return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $result['data'], '请求成功');
+        $result = array();
+        foreach ($questions_result as $question)
+        {
+            // 个人信息
+            $userInfo = UserInfo::select('user_name', 'head_pic')
+                ->where('id', $question['user_id'])
+                ->first()
+                ->toArray();
+
+            $question = array_merge($question, $userInfo);
+
+
+            // 图片
+            $picIds = QuestionPictures::select('pic_id')
+                ->where('question_id', $question['id'])
+                ->get()
+                ->toArray();
+
+            $pics = Picture::whereIn('id', $picIds)
+                ->get()
+                ->toArray();
+
+            $question = array_merge($question, ['image' => $pics]);
+//            print_r($question);
+
+            // 标签
+            $tagIds = QuestionTags::select('tag_id')
+                ->where('question_id', $question['id'])
+                ->get()
+                ->toArray();
+            $tags = Tags::whereIn('id', $tagIds)
+                ->get()
+                ->toArray();
+            $question = array_merge($question, ['tags' => $tags]);
+
+            array_push($result, $question);
+        }
+
+//        print_r($questions_result);
+
+        return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $result, '请求成功');
     }
 
     public function getAnswers() {
@@ -256,6 +323,7 @@ class QuestionController extends Controller
         $questionId = $request->input('questionId');
         $targetUserId = $request->input('userId');
         $size = $request->input('size');
+        $page = $request->input('page');
 
         if ($questionId == null && $targetUserId == null)
         {
@@ -266,7 +334,8 @@ class QuestionController extends Controller
             $size = 20;
         }
 
-        $result = Answer::select('*');
+
+        $result = Answer::select('id', 'answer_brief', 'answer_time', 'question_id', 'user_id', 'is_resolved');
 
         if ($questionId != null)
         {
@@ -276,14 +345,31 @@ class QuestionController extends Controller
         {
             $result = $result->where('user_id', $targetUserId);
         }
-        $result = $result->paginate($size)->toArray();
+        $result = $result
+            ->orderBy('answer_time', 'desc')
+            ->paginate($size, '*', 'page', $page)
+            ->toArray();
 
         $answers = $result['data'];
         $array = array();
         foreach ($answers as $answer) {
 
+            // 个人信息
+            $userInfo = UserInfo::select('user_name', 'head_pic')
+                ->where('id', $answer['user_id'])
+                ->first()
+                ->toArray();
+
+            $answer = array_merge($answer, $userInfo);
+
+            // 评论数
             $commentCount = Comment::where('answer_id', $answer['id'])->count();
-            $answer['comments_count'] = $commentCount;
+            $answer['commentNumber'] = $commentCount;
+
+            // 赞数
+            $upCount = AnswerUp::where('answer_id', $answer['id'])->count();
+            $answer['upNumber'] = $upCount;
+
             array_push($array, $answer);
         }
 
@@ -321,5 +407,193 @@ class QuestionController extends Controller
 
         return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $result['data'], '请求成功');
 
+    }
+
+    public function getQuestionDetail() {
+        $request = Request::capture();
+        $token = $request->input('token');
+        $questionId = $request->input('questionId');
+
+        $userId = AuthController::getUserIdByToken($token);
+        if ($userId == null) {
+            return Utility::response_format(Utility::RESPONSE_CODE_AUTH_ERROR, '', '认证失败');
+        }
+
+        if ($questionId == null) {
+            return Utility::response_format(Utility::RESPONSE_CODE_Error, '', 'questionId不能为空');
+        }
+
+        $question = Question::select('id', 'title', 'content', 'publish_time', 'user_id')
+            ->where('id', $questionId)
+            ->first()
+            ->toArray();
+
+
+//        print_r($question);
+        // 个人信息
+        $userInfo = UserInfo::select('user_name', 'head_pic')
+            ->where('id', $question['user_id'])
+            ->first()
+            ->toArray();
+
+        $question = array_merge($question, $userInfo);
+
+
+        // 图片
+        $picIds = QuestionPictures::select('pic_id')
+            ->where('question_id', $question['id'])
+            ->get()
+            ->toArray();
+
+        $pics = Picture::whereIn('id', $picIds)
+            ->get()
+            ->toArray();
+
+        $question = array_merge($question, ['image' => $pics]);
+//            print_r($question);
+
+        // 标签
+        $tagIds = QuestionTags::select('tag_id')
+            ->where('question_id', $question['id'])
+            ->get()
+            ->toArray();
+        $tags = Tags::whereIn('id', $tagIds)
+            ->get()
+            ->toArray();
+        $question = array_merge($question, ['tags' => $tags]);
+
+        // 回答 时间倒序 前三条
+
+        $answers = Answer::select('*')
+            ->where('question_id', $questionId)
+            ->orderBy('answer_time', 'desc')
+            ->paginate(3, '*', 'page', 1)
+            ->toArray();
+
+        $result = array();
+        foreach ($answers['data'] as $answer) {
+            // 个人信息
+            $userInfo = UserInfo::select('user_name', 'head_pic')
+                ->where('id', $answer['user_id'])
+                ->first()
+                ->toArray();
+
+            $answer = array_merge($answer, $userInfo);
+
+            // 回答的评论数
+
+            $comments = Comment::select('*')
+                ->where('answer_id', $answer['id'])
+                ->get()
+                ->toArray();
+            $answer = array_merge($answer, ['commentNumber' => count($comments)]);
+
+            array_push($result, $answer);
+        }
+
+        $question = array_merge($question, ['answers' => $result]);
+
+        // 回答 最热门 三条
+//        ....
+
+        return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $question, '请求成功');
+    }
+
+    public function getAnswerDetail() {
+
+        $request = Request::capture();
+        $token = $request->input('token');
+        $answerId = $request->input('answerId');
+
+        $userId = AuthController::getUserIdByToken($token);
+        if ($userId == null) {
+            return Utility::response_format(Utility::RESPONSE_CODE_AUTH_ERROR, '', '认证失败');
+        }
+
+        if ($answerId == null) {
+            return Utility::response_format(Utility::RESPONSE_CODE_Error, '', 'answerId不能为空');
+        }
+
+        $answer = Answer::select('id', 'answer_content', 'answer_time', 'question_id', 'user_id', 'is_resolved')
+            ->where('id', $answerId)
+            ->first()
+            ->toArray();
+
+
+//        print_r($question);
+        // 个人信息
+        $userInfo = UserInfo::select('user_name', 'head_pic')
+            ->where('id', $answer['user_id'])
+            ->first()
+            ->toArray();
+
+        $answer = array_merge($answer, $userInfo);
+
+
+        // 图片
+        $picIds = AnswerPictures::select('pic_id')
+            ->where('answer_id', $answer['id'])
+            ->get()
+            ->toArray();
+
+        $pics = Picture::whereIn('id', $picIds)
+            ->get()
+            ->toArray();
+
+        $answer = array_merge($answer, ['image' => $pics]);
+
+        // 评论数
+        $comments = Comment::where('answer_id', $answer['id'])
+            ->count();
+        $answer = array_merge($answer, ['commentNumber' => $comments]);
+
+        // 赞数
+        $upCount = AnswerUp::where('answer_id', $answer['id'])->count();
+        $answer = array_merge($answer, ['upNumber' => $upCount]);
+
+        return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $answer, '请求成功');
+    }
+
+    public function getHotAnswer()
+    {
+        $request =  Request::capture();
+        $token =    $request->input('token');
+        $questionId = $request->input('questionId');
+
+        $answersQuery = Answer::select('id', 'answer_brief', 'answer_time', 'question_id', 'user_id', 'is_resolved')
+            ->where('question_id', $questionId);
+
+        $answerIds = $answersQuery->lists('id')->toArray();
+
+        $upAnswers = AnswerUp::select('answer_id', DB::raw('count(*) as up_number'))
+            ->whereIn('answer_id', $answerIds)
+            ->groupBy('answer_id')
+            ->orderBy('up_number', 'desc')
+            ->take(2);
+
+//        print_r($upAnswers->lists('answer_id')->toArray());
+
+        $answersQuery = Answer::select('id', 'answer_brief', 'answer_time', 'question_id', 'user_id', 'is_resolved')
+            ->where('question_id', $questionId)
+            ->whereIn('id', $upAnswers->lists('answer_id')->toArray());
+        $answers = $answersQuery->get()->toArray();
+
+        $upNumber = $upAnswers->get()->toArray();
+
+        $result = array();
+        foreach ($answers as $an)
+        {
+            foreach ($upNumber as $up)
+            {
+                if ($up['answer_id'] == $an['id'])
+                {
+                    $an = array_merge($an, ['upNumber' => $up['up_number']]);
+                    array_push($result, $an);
+                }
+            }
+
+        }
+
+        return Utility::response_format(Utility::RESPONSE_CODE_SUCCESS, $result, '请求成功');
     }
 }
