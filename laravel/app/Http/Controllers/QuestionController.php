@@ -278,7 +278,7 @@ class QuestionController extends Controller
         {
             // 个人信息
             $userInfo = UserInfo::select('user_name', 'head_pic')
-                ->where('id', $question['user_id'])
+                ->where('user_id', $question['user_id'])
                 ->first()
                 ->toArray();
 
@@ -356,7 +356,7 @@ class QuestionController extends Controller
 
             // 个人信息
             $userInfo = UserInfo::select('user_name', 'head_pic')
-                ->where('id', $answer['user_id'])
+                ->where('user_id', $answer['user_id'])
                 ->first()
                 ->toArray();
 
@@ -432,7 +432,7 @@ class QuestionController extends Controller
 //        print_r($question);
         // 个人信息
         $userInfo = UserInfo::select('user_name', 'head_pic')
-            ->where('id', $question['user_id'])
+            ->where('user_id', $question['user_id'])
             ->first()
             ->toArray();
 
@@ -474,7 +474,7 @@ class QuestionController extends Controller
         foreach ($answers['data'] as $answer) {
             // 个人信息
             $userInfo = UserInfo::select('user_name', 'head_pic')
-                ->where('id', $answer['user_id'])
+                ->where('user_id', $answer['user_id'])
                 ->first()
                 ->toArray();
 
@@ -523,7 +523,7 @@ class QuestionController extends Controller
 //        print_r($question);
         // 个人信息
         $userInfo = UserInfo::select('user_name', 'head_pic')
-            ->where('id', $answer['user_id'])
+            ->where('user_id', $answer['user_id'])
             ->first()
             ->toArray();
 
